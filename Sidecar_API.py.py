@@ -302,20 +302,27 @@ def perform_disbursement_api_requests(config):
 
         response = None
         try:
-            response = requests.get(full_url, headers=headers)
-            response.raise_for_status()
-            response_json = response.json()
-            logger.info(f"Response received: {response_json}")
+    response = requests.get(full_url, headers=headers)
+    response.raise_for_status()
+    response_json = response.json()
 
-            disbursement_data, validation_status = extract_disbursement_details(
-                response_json, cms_agent, dealer_code, current_date
-            )
-            all_results.extend(disbursement_data)
+    # Save JSON response
+    save_json_response(
+        response_json, 
+        f"disbursement_{dealer_code}_{current_date}.json", 
+        r"C:\Users\mriyaz\OneDrive - Safe-Guard Products\Desktop\MR\Override Sidecar\QA\Mercedes Benz"
+    )
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request failed for dealerCode={dealer_code}. Error: {e}")
-            if response is not None and response.text:
-                logger.error(f"Response content: {response.text}")
+    # Existing logic
+    disbursement_data, validation_status = extract_disbursement_details(
+        response_json, cms_agent, dealer_code, current_date
+    )
+    all_results.extend(disbursement_data)
+except requests.exceptions.RequestException as e:
+    logger.error(f"Request failed for dealerCode={dealer_code}. Error: {e}")
+    if response is not None and response.text:
+        logger.error(f"Response content: {response.text}")
+
 
     save_to_excel(all_results, "Disbursement Data", file_path)
     return all_results
@@ -387,20 +394,25 @@ def perform_api_requests(config):
 
         response = None
         try:
-            response = requests.get(full_url, headers=headers)
-            response.raise_for_status()
-            response_json = response.json()
-            logger.info(f"Response received: {response_json}")
+    response = requests.get(full_url, headers=headers)
+    response.raise_for_status()
+    response_json = response.json()
 
-            extracted_data = extract_override_amounts(response_json, cms_agent, dealer_code, current_date)
-            all_results.extend(extracted_data)
+    # Save JSON response
+    save_json_response(
+        response_json, 
+        f"override_{dealer_code}_{current_date}.json", 
+        r"C:\Users\mriyaz\OneDrive - Safe-Guard Products\Desktop\MR\Override Sidecar\QA\Mercedes Benz"
+    )
 
-        except requests.exceptions.RequestException as e:
-            logger.error(
-                f"Failed overrides request for dealerCode={dealer_code}. Error: {e}"
-            )
-            if response is not None and response.text:
-                logger.error(f"Response content: {response.text}")
+    # Existing logic
+    extracted_data = extract_override_amounts(response_json, cms_agent, dealer_code, current_date)
+    all_results.extend(extracted_data)
+except requests.exceptions.RequestException as e:
+    logger.error(f"Request failed for dealerCode={dealer_code}. Error: {e}")
+    if response is not None and response.text:
+        logger.error(f"Response content: {response.text}")
+
 
     save_to_excel(all_results, "Override Data", file_path)
     return all_results
@@ -468,13 +480,20 @@ def perform_chargeback_percentage_request(config):
 
         response = None
         try:
-            response = requests.get(chargeback_url, params=params, headers=headers)
-            response.raise_for_status()
-            response_json = response.json()
-            logger.info(f"Response received: {response_json}")
+    response = requests.get(chargeback_url, params=params, headers=headers)
+    response.raise_for_status()
+    response_json = response.json()
 
-            chargeback_data = response_json.get("result", {}).get("data", {}).get("chargebackData", [])
-            for item in chargeback_data:
+    # Save JSON response
+    save_json_response(
+        response_json, 
+        f"chargeback_{cms_agent}.json", 
+        r"C:\Users\mriyaz\OneDrive - Safe-Guard Products\Desktop\MR\Override Sidecar\QA\Mercedes Benz"
+    )
+
+    # Existing logic
+    chargeback_data = response_json.get("result", {}).get("data", {}).get("chargebackData", [])
+    for item in chargeback_data:
                 product_type_description = item.get("productTypeDescription")
                 product_type = item.get("productType")
                 percentage = item.get("percentage")
@@ -719,6 +738,28 @@ def compare_amounts(dealer_status, ncb_fee, override_amount, override_payee_amou
                 f"Override amount mismatch: Calculated {override_amount}, Disbursement {override_payee_amount}"
             )
         return override_match
+
+def save_json_response(response_json, file_name, directory):
+    """
+    Saves a JSON response to a specified file in a given directory.
+
+    Args:
+        response_json (dict): The JSON response to save.
+        file_name (str): The name of the file to save the JSON data.
+        directory (str): The directory where the file will be saved.
+
+    Raises:
+        OSError: If the directory cannot be created or accessed.
+    """
+    os.makedirs(directory, exist_ok=True)  # Ensure the directory exists
+    file_path = os.path.join(directory, file_name)
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(response_json, f, ensure_ascii=False, indent=4)
+        logger.info(f"Saved JSON response to {file_path}")
+    except Exception as e:
+        logger.error(f"Failed to save JSON response to {file_path}. Error: {e}")
+
 
 def main():
     try:

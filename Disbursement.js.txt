@@ -1,0 +1,106 @@
+pm.test("Status code is 200", function () {
+    pm.response.to.have.status(200);
+});
+
+// Parse response JSON
+let jsonResponse;
+try {
+    jsonResponse = pm.response.json();
+} catch (error) {
+    console.error("❌ Failed to parse response JSON:", error);
+    return;
+}
+
+// Validate response status
+if (jsonResponse.standardResponse.status && jsonResponse.standardResponse.responseCode === 200) {
+    if (jsonResponse.overridesPayee && jsonResponse.overridesPayee.productTypes) {
+        let agentCode = jsonResponse.overridesPayee.programAgentCode || "UNKNOWN";
+        let productTypes = jsonResponse.overridesPayee.productTypes;
+
+        let chargebackData = JSON.parse(pm.collectionVariables.get("chargebackData") || "{}");
+        let overrideData = JSON.parse(pm.collectionVariables.get("overrideData") || "{}");
+
+        let DisbursementData = {};
+        let totalCommissionSum = 0;
+        let totalOverrideSum = 0;
+
+        productTypes.forEach((product) => {
+            let productType = product.productType || "N/A";
+            let productCode = product.productCode || "N/A";
+            let commissions = product.commission || [];
+
+            let normalPayeeAmount = {};
+            let ncbPayeeAmount = {};
+            let hasNCB = false;
+
+            commissions.forEach((entry) => {
+                let payeeCode = entry.payeeCode || "N/A";
+                let productCoverageCode = entry.productCoverageCode || "NULL"; // Use actual coverage code if available
+                let termRange = entry.termRange || "NULL";
+                let amount = entry.amount || 0;
+
+                // ✅ Construct key using productCoverageCode
+                let key = `${productType}_${productCode}_${productCoverageCode}`;
+                if (agentCode === "007500") {
+                    key += `_${termRange}`;
+                }
+
+                // ✅ Determine if payee is NCB
+                if (chargebackData[payeeCode] === "NCB" || payeeCode.includes("NCB")) {
+                    ncbPayeeAmount[key] = (ncbPayeeAmount[key] || 0) + amount;
+                    hasNCB = true;
+                } else {
+                    normalPayeeAmount[key] = (normalPayeeAmount[key] || 0) + amount;
+                }
+            });
+
+            // ✅ Ensure correct summation for each key
+            Object.keys(normalPayeeAmount).forEach((key) => {
+                if (hasNCB) {
+                    // Sum normal + corresponding NCB payee if NCB exists
+                    let totalAmount = normalPayeeAmount[key] + (ncbPayeeAmount[key] || 0);
+                    DisbursementData[key] = totalAmount;
+                } else {
+                    // No NCB payees, sum normal payees as usual
+                    DisbursementData[key] = normalPayeeAmount[key];
+                }
+            });
+
+            console.log(`🔹 DisbursementData Updated:`, DisbursementData);
+        });
+
+        // ✅ Compare summed amounts with override data & ensure all keys are tested
+        Object.keys(overrideData).forEach((key) => {
+            let commissionAmount = DisbursementData[key] || 0;  // ✅ Use exact key from OverrideData
+            let overrideAmount = overrideData[key] || 0;
+
+            pm.test(`Commission for ${key} matches Override`, function () {
+                pm.expect(commissionAmount).to.equal(overrideAmount);
+            });
+
+            if (commissionAmount === 0 && overrideAmount !== 0) {
+                console.warn(`⚠️ Discrepancy: Expected ${overrideAmount} but found 0 for ${key}`);
+            }
+
+            console.log(`🔹 Checking ${key}: Commission ${commissionAmount} vs Override ${overrideAmount}`);
+        });
+
+        // ✅ Calculate final sums
+        totalCommissionSum = Object.values(DisbursementData).reduce((a, b) => a + b, 0);
+        totalOverrideSum = Object.values(overrideData).reduce((a, b) => a + b, 0);
+
+        // ✅ Final total validation (ensuring total sums match)
+        pm.test("Final Total Commission matches Override Total", function () {
+            pm.expect(totalCommissionSum).to.equal(totalOverrideSum);
+        });
+
+        pm.collectionVariables.set("DisbursementData", JSON.stringify(DisbursementData));
+        console.log("🔹 Final Disbursement Data:", DisbursementData);
+        console.log(`🔹 Final Total Commission: ${totalCommissionSum}`);
+        console.log(`🔹 Final Override Total: ${totalOverrideSum}`);
+    } else {
+        console.warn("Warning: No product types found in response.");
+    }
+} else {
+    console.error("Error: API response status is false or responseCode is not 200.");
+}

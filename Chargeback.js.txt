@@ -1,0 +1,26 @@
+pm.test("Status code is 200", function () {
+    pm.response.to.have.status(200);
+});
+
+// Parse the response JSON
+let jsonResponse = pm.response.json();
+
+if (jsonResponse.standardResponse.status && jsonResponse.standardResponse.responseCode === 200) {
+    if (jsonResponse.chargebackPayees) {
+        let chargebackData = {};
+
+        jsonResponse.chargebackPayees.forEach((payee) => {
+            let payeeCode = (payee.payeeCode || "").trim().toUpperCase();
+            let isNCB = payee.isNCB ? "NCB" : "NORMAL"; // Mark NCB Payees
+
+            chargebackData[payeeCode] = isNCB;
+        });
+
+        pm.collectionVariables.set("chargebackData", JSON.stringify(chargebackData));
+        console.log("✅ Updated Chargeback Data:", chargebackData);
+    } else {
+        console.warn("⚠️ No chargeback payees found.");
+    }
+} else {
+    console.error("❌ API response failed. Status: false / Response Code not 200");
+}

@@ -1,0 +1,49 @@
+pm.test("Status code is 200", function () {
+    pm.response.to.have.status(200);
+});
+
+// Parse JSON response safely
+let jsonResponse;
+try {
+    jsonResponse = pm.response.json();
+} catch (error) {
+    console.error("❌ Failed to parse response JSON:", error);
+    return;
+}
+
+// Validate response status
+if (jsonResponse.standardResponse.status && jsonResponse.standardResponse.responseCode === 200) {
+    
+    if (jsonResponse.dealerOverrides && jsonResponse.dealerOverrides.productTypes) {
+        let productTypes = jsonResponse.dealerOverrides.productTypes;
+        let agentCode = jsonResponse.dealerOverrides.programAgentCode || "UNKNOWN"; // Get agent code
+        
+        let overrideData = {}; // Initialize storage object
+
+        productTypes.forEach((product) => {
+            let productType = product.productType ? product.productType.trim().toUpperCase() : "UNKNOWN";
+            let productCode = product.productCode ? product.productCode.trim().toUpperCase() : "UNKNOWN";
+            let coverageCode = product.productCoverageCode ? product.productCoverageCode.trim().toUpperCase() : "NULL";
+            let amount = isNaN(parseFloat(product.amount)) ? 0 : parseFloat(product.amount);
+            
+            // Include termRange **only for agent 007500**
+            let termRange = agentCode === "007500" ? (product.termRange || "NULL").trim().toUpperCase() : "";
+
+            // ✅ Construct key dynamically (removes extra spaces)
+            let key = agentCode === "007500" 
+                ? `${productType}_${productCode}_${coverageCode}_${termRange}`.replace(/\s+/g, "_") 
+                : `${productType}_${productCode}_${coverageCode}`.replace(/\s+/g, "_");
+
+            overrideData[key] = amount; // Store amount
+        });
+
+        // ✅ Store **only latest request data** (overwrites previous values)
+        pm.collectionVariables.set("overrideData", JSON.stringify(overrideData));
+
+        console.log("✅ Updated Override Data:", overrideData);
+    } else {
+        console.warn("⚠️ No product types found in response.");
+    }
+} else {
+    console.error("❌ API response failed. Status: false / Response Code not 200");
+}
